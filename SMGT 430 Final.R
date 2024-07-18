@@ -378,136 +378,136 @@ for (game_id in unique_game_ids) {
   nba_player_box[nba_player_box$game_id == game_id & nba_player_box$home_away == "away", "opponent_exp_score"] <- home_final_exp_score
 }
 
-# Identify starting players from box score                                                        #
-starters <- nba_player_box |>                                                                    #
-  dplyr::filter(starter) |>                                                                       #
-  dplyr::mutate(                                                                                  #
-    score_diff_final = (1 - 2 * (home_away == "away")) * (team_exp_score - opponent_exp_score)       #
-  ) |>                                                                                            #
-  dplyr::select(game_id, home_away, athlete_id, score_diff_final)                                 #
+# Identify starting players from box score                                                        
+starters <- nba_player_box |>                                                                    
+  dplyr::filter(starter) |>                                                                       
+  dplyr::mutate(                                                                                  
+    score_diff_final = (1 - 2 * (home_away == "away")) * (team_exp_score - opponent_exp_score)       
+  ) |>                                                                                            
+  dplyr::select(game_id, home_away, athlete_id, score_diff_final)                                 
 
-# Extract substitutions from play-by-play data                                                    #
-substitutions <- nba_pbp |>                                                                      #
-  dplyr::filter(type_text == "Substitution") |>                                                   #
-  dplyr::mutate(                                                                                  #
-    time_start = 12 * (qtr - 1) + (11 - clock_minutes) + (60 - clock_seconds) / 60,                #
-    time_remaining = end_game_seconds_remaining / 60,                                             #
-    score_diff_start = home_expected_score - away_expected_score                                                    #
-  ) |>                                                                                            #
-  dplyr::select(game_id, time_start, time_remaining, score_diff_start, athlete_id_1, athlete_id_2)#
+# Extract substitutions from play-by-play data                                                    
+substitutions <- nba_pbp |>                                                                      
+  dplyr::filter(type_text == "Substitution") |>                                                   
+  dplyr::mutate(                                                                                  
+    time_start = 12 * (qtr - 1) + (11 - clock_minutes) + (60 - clock_seconds) / 60,                
+    time_remaining = end_game_seconds_remaining / 60,                                             
+    score_diff_start = home_expected_score - away_expected_score                                                    
+  ) |>                                                                                            
+  dplyr::select(game_id, time_start, time_remaining, score_diff_start, athlete_id_1, athlete_id_2)
 
-# Create a dataframe to hold times when players come on the court (starting with the starters)    #
-player_on <- starters |>                                                                          #
-  dplyr::group_by(game_id, home_away) |>                                                          #
+# Create a dataframe to hold times when players come on the court (starting with the starters)    
+player_on <- starters |>                                                                          
+  dplyr::group_by(game_id, home_away) |>                                                          
   dplyr::mutate(index = 1:dplyr::n(), time_start = 0, score_diff_start = 0, time_remaining = NA) |>
-  dplyr::ungroup()                                                                                #
+  dplyr::ungroup()                                                                                
 
-# Each time a substitution occurs, track the "lineup slot" into which the player enters           #
-for (i in 1:nrow(substitutions)) {                                                                #
+# Each time a substitution occurs, track the "lineup slot" into which the player enters           
+for (i in 1:nrow(substitutions)) {                                                                
   
-  new_player_on <- player_on |>                                                                   #
-    # Find the "lineup slot" based on the outgoing player                                         #
-    dplyr::filter(                                                                                #
-      game_id == substitutions$game_id[i],                                                        #
-      athlete_id == substitutions$athlete_id_2[i]   # this is the player coming off               #
-    ) |>                                                                                          #
-    dplyr::slice(dplyr::n()) |>                                                                   #
-    # Replace the information based on the incoming player, current time and current score        #
-    dplyr::mutate(                                                                                #
-      athlete_id = substitutions$athlete_id_1[i],   # this is the player coming on                #
-      time_start = substitutions$time_start[i],                                                   #
-      time_remaining = substitutions$time_remaining[i],                                           #
-      score_diff_start = substitutions$score_diff_start[i]                                        #
-    )                                                                                             #
+  new_player_on <- player_on |>                                                                   
+    # Find the "lineup slot" based on the outgoing player                                         
+    dplyr::filter(                                                                                
+      game_id == substitutions$game_id[i],                                                        
+      athlete_id == substitutions$athlete_id_2[i]   # this is the player coming off               
+    ) |>                                                                                          
+    dplyr::slice(dplyr::n()) |>                                                                   
+    # Replace the information based on the incoming player, current time and current score        
+    dplyr::mutate(                                                                                
+      athlete_id = substitutions$athlete_id_1[i],   # this is the player coming on                
+      time_start = substitutions$time_start[i],                                                   
+      time_remaining = substitutions$time_remaining[i],                                           
+      score_diff_start = substitutions$score_diff_start[i]                                        
+    )                                                                                             
   
-  player_on <- dplyr::bind_rows(player_on, new_player_on)                                         #
-}                                                                                                 #
+  player_on <- dplyr::bind_rows(player_on, new_player_on)                                         
+}                                                                                                 
 
-# If multiple substitutions happen for the same "lineup slot" without the clock time changing,    #
-# keep only the last player to enter the game in that "lineup slot".                              #
-player_on_collapsed <- player_on |>                                                               #
-  dplyr::group_by(                                                                                #
-    game_id, time_start, time_remaining, score_diff_start, score_diff_final, home_away, index     #
-  ) |>                                                                                            #
-  dplyr::summarize(athlete_id = athlete_id[dplyr::n()], .groups = "drop")                         #
+# If multiple substitutions happen for the same "lineup slot" without the clock time changing,    
+# keep only the last player to enter the game in that "lineup slot".                              
+player_on_collapsed <- player_on |>                                                               
+  dplyr::group_by(                                                                                
+    game_id, time_start, time_remaining, score_diff_start, score_diff_final, home_away, index     
+  ) |>                                                                                            
+  dplyr::summarize(athlete_id = athlete_id[dplyr::n()], .groups = "drop")                         
 
-# Pivot wider to spread lineup slots across the columns instead of being gathered into rows       #
-lineups <- player_on_collapsed |>                                                                 #
-  dplyr::mutate(name = glue::glue("{home_away}_{index}")) |>                                      #
-  dplyr::select(-home_away, -index) |>                                                            #
-  tidyr::pivot_wider(names_from = name, values_from = athlete_id) |>                              #
-  # Once a player enters a lineup slot, they stay in it until someone replaces them               #
-  tidyr::fill(dplyr::matches("^away|^home"), .direction = "down")                                 #
+# Pivot wider to spread lineup slots across the columns instead of being gathered into rows       
+lineups <- player_on_collapsed |>                                                                 
+  dplyr::mutate(name = glue::glue("{home_away}_{index}")) |>                                      
+  dplyr::select(-home_away, -index) |>                                                            
+  tidyr::pivot_wider(names_from = name, values_from = athlete_id) |>                              
+  # Once a player enters a lineup slot, they stay in it until someone replaces them               
+  tidyr::fill(dplyr::matches("^away|^home"), .direction = "down")                                 
 
-# Create a dataframe of athlete data                                                              #
-athlete <- nba_player_box |>                                                                     #
-  dplyr::count(athlete_id, athlete_display_name, team_abbreviation) |>                            #
-  # Make sure we only have one row per athlete_id                                                 #
-  dplyr::group_by(athlete_id) |>                                                                  #
-  dplyr::arrange(-n) |>                                                                           #
-  dplyr::slice(1) |>                                                                              #
-  dplyr::select(-n) |>                                                                            #
-  dplyr::ungroup()                                                                                #
+# Create a dataframe of athlete data                                                              
+athlete <- nba_player_box |>                                                                     
+  dplyr::count(athlete_id, athlete_display_name, team_abbreviation) |>                            
+  # Make sure we only have one row per athlete_id                                                 
+  dplyr::group_by(athlete_id) |>                                                                  
+  dplyr::arrange(-n) |>                                                                           
+  dplyr::slice(1) |>                                                                              
+  dplyr::select(-n) |>                                                                            
+  dplyr::ungroup()                                                                                
 
-data <- lineups |>                                                                                #
-  dplyr::group_by(game_id) |>                                                                     #
-  dplyr::mutate(                                                                                  #
-    minutes = dplyr::coalesce(dplyr::lead(time_start, 1) - time_start, time_remaining),           #
+data <- lineups |>                                                                                
+  dplyr::group_by(game_id) |>                                                                     
+  dplyr::mutate(                                                                                  
+    minutes = dplyr::coalesce(dplyr::lead(time_start, 1) - time_start, time_remaining),           
     score_diff = dplyr::coalesce(dplyr::lead(score_diff_start, 1), score_diff_final) - score_diff_start,
-  ) |>                                                                                            #
-  dplyr::ungroup() |>                                                                             #
-  dplyr::filter(minutes > 1)                                                                      #
+  ) |>                                                                                            
+  dplyr::ungroup() |>                                                                             
+  dplyr::filter(minutes > 1)                                                                      
 
-data_long <- data |>                                                                              #
-  dplyr::mutate(stint = 1:dplyr::n()) |>  # label the stint to which this row belongs             #
-  dplyr::select(game_id, stint, minutes, score_diff, dplyr::matches("^away|^home")) |>            #
-  tidyr::pivot_longer(cols = c(dplyr::matches("^away|^home")), values_to = "athlete_id")          #
+data_long <- data |>                                                                              
+  dplyr::mutate(stint = 1:dplyr::n()) |>  # label the stint to which this row belongs             
+  dplyr::select(game_id, stint, minutes, score_diff, dplyr::matches("^away|^home")) |>            
+  tidyr::pivot_longer(cols = c(dplyr::matches("^away|^home")), values_to = "athlete_id")          
 
-head(data_long)                                                                                   #
+head(data_long)                                                                                   
 
-athlete_summary <- data_long |>                                                                   #
-  dplyr::group_by(athlete_id) |>                                                                  #
-  dplyr::summarize(                                                                               #
-    minutes = sum(minutes),                                                                       #
-    plus_minus = sum((1 - 2 * grepl("away", name)) * score_diff),                                 #
-    .groups = "drop"                                                                              #
-  )                                                                                               #
+athlete_summary <- data_long |>                                                                   
+  dplyr::group_by(athlete_id) |>                                                                  
+  dplyr::summarize(                                                                               
+    minutes = sum(minutes),                                                                       
+    plus_minus = sum((1 - 2 * grepl("away", name)) * score_diff),                                 
+    .groups = "drop"                                                                              
+  )                                                                                               
 
-X_data <- data_long |>                                                                            #
-  dplyr::mutate(                                                                                  #
-    row = stint,                                                                                  #
-    column = as.numeric(as.factor(athlete_id)),   # convert athlete_id to 1, ..., p               #
-    value = ifelse(substring(name, 1, 4) == "home", 1, -1)                                        #
-  )                                                                                               #
+X_data <- data_long |>                                                                            
+  dplyr::mutate(                                                                                  
+    row = stint,                                                                                  
+    column = as.numeric(as.factor(athlete_id)),   # convert athlete_id to 1, ..., p               
+    value = ifelse(substring(name, 1, 4) == "home", 1, -1)                                        
+  )                                                                                               
 
-x <- Matrix::sparseMatrix(                                                                        #
-  i = X_data$row,                                                                                 #
-  j = X_data$column,                                                                              #
-  x = X_data$value                                                                                #
-)                                                                                                 #
-y <- data$score_diff / data$minutes                                                               #
-w <- data$minutes                                                                                 #
+x <- Matrix::sparseMatrix(                                                                        
+  i = X_data$row,                                                                                 
+  j = X_data$column,                                                                              
+  x = X_data$value                                                                                
+)                                                                                                 
+y <- data$score_diff / data$minutes                                                               
+w <- data$minutes                                                                                 
 
-model_rapm <- glmnet::cv.glmnet(                                                                  #
-  x = x,                                                                                          #
-  y = y,                                                                                          #
-  weights = w,                                                                                    #
-  alpha = 0,                                                                                      #
-  standardize = FALSE                                                                             #
-)                                                                                                 #
+model_rapm <- glmnet::cv.glmnet(                                                                  
+  x = x,                                                                                          
+  y = y,                                                                                          
+  weights = w,                                                                                    
+  alpha = 0,                                                                                      
+  standardize = FALSE                                                                             
+)                                                                                                 
 
-athlete_coef_rapm <- X_data |>                                                                    #
-  dplyr::distinct(column, athlete_id) |>                                                          #
-  dplyr::arrange(column) |>                                                                       #
-  dplyr::mutate(                                                                                  #
-    coef = coef(model_rapm, s = "lambda.min")[-1, 1]                                              #
-  ) |>                                                                                            #
-  dplyr::select(athlete_id, coef)                                                                 #
+athlete_coef_rapm <- X_data |>                                                                    
+  dplyr::distinct(column, athlete_id) |>                                                          
+  dplyr::arrange(column) |>                                                                       
+  dplyr::mutate(                                                                                  
+    coef = coef(model_rapm, s = "lambda.min")[-1, 1]                                              
+  ) |>                                                                                            
+  dplyr::select(athlete_id, coef)                                                                 
 
-player_coef <- athlete_summary |>                                                                                #
-  dplyr::inner_join(athlete_coef_rapm, by = "athlete_id") |>                                      #
-  dplyr::left_join(athlete, by = "athlete_id") |>                                                 #                                                    #
-  dplyr::arrange(-coef)                                                                           #
+player_coef <- athlete_summary |>                                                                                
+  dplyr::inner_join(athlete_coef_rapm, by = "athlete_id") |>                                      
+  dplyr::left_join(athlete, by = "athlete_id") |>                                                                                                     #
+  dplyr::arrange(-coef)                                                                           
 
 player_coef
 
